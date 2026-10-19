@@ -1,21 +1,34 @@
 import requests
 import base64
 import urllib.parse
+import random
+import string
 
-# Ваши исходные ссылки
+# Ваши исходные ссылки на подписки
 SOURCES = [
     "https://codeberg.org/zieng2/wl/raw/branch/main/vless_universal.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
     "https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/mix_sub.txt"
 ]
 
-# Ключевые слова для исключения РФ
+# Ключевые слова для исключения российских серверов
 RU_KEYWORDS = [
     "russia", "russian", "moscow", "msk", "spb", "saint-petersburg", 
     "россия", "москва", "питер", "рф", "ru-", "-ru", "_ru", ".ru", "ru_"
 ]
 
+# Пул символов для тотальной маскировки (разные языки, цифры, спецзнаки)
+MASK_CHARS = (
+    string.ascii_letters + string.digits + 
+    "абвгдеёжзийклмнопрстуфхцчшщъыьэюя" + # Кириллица
+    "αβγδεζηθικλμνξοπρστυφχψω" +         # Греческий
+    "ابتثجحخدذرزسشصضطظعغفقكلمنهوي" +     # Арабский
+    "一二三四五六七八九十" +              # Китайский
+    "!@#$%^&*()_+-=[]{}|;:,.<>?~"        # Спецсимволы
+)
+
 def decode_base64_if_needed(text):
+    """Расшифровывает подписку, если она закодирована в Base64"""
     try:
         decoded = base64.b64decode(text).decode('utf-8')
         if "://" in decoded:
@@ -25,11 +38,13 @@ def decode_base64_if_needed(text):
     return text
 
 def is_valid_vless_and_not_ru(link):
+    """Проверяет, что это VLESS и что в нем нет маркеров РФ"""
     if not link.startswith("vless://"):
         return False
     
     link_lower = link.lower()
     try:
+        # Извлекаем имя сервера после решетки, чтобы тоже проверить его
         fragment = link.split("#")[-1]
         server_name = urllib.parse.unquote(fragment).lower()
     except:
@@ -42,6 +57,20 @@ def is_valid_vless_and_not_ru(link):
             return False
             
     return True
+
+def mask_link_name(link):
+    """Заменяет оригинальное название сервера на случайный набор символов"""
+    # Отделяем техническую часть ссылки от названия (все, что после #)
+    base_url = link.split("#")[0]
+    
+    # Генерируем случайную строку длиной от 10 до 16 символов
+    length = random.randint(10, 16)
+    random_name = ''.join(random.choice(MASK_CHARS) for _ in range(length))
+    
+    # Кодируем спецсимволы в URL-формат, чтобы VPN-приложения не сломали ссылку
+    safe_name = urllib.parse.quote(random_name)
+    
+    return f"{base_url}#{safe_name}"
 
 def main():
     unique_links = set()
@@ -61,14 +90,19 @@ def main():
             print(f"Ошибка при скачивании {url}: {e}")
 
     print(f"Всего найдено уникальных VLESS-ссылок: {len(unique_links)}")
+    
+    # 1. Фильтруем российские серверы
     clean_links = [link for link in unique_links if is_valid_vless_and_not_ru(link)]
     print(f"Осталось после фильтрации (без РФ): {len(clean_links)}")
 
+    # 2. Применяем тотальную маскировку имен
+    masked_links = [mask_link_name(link) for link in clean_links]
+
     with open("output.txt", "w", encoding="utf-8") as f:
-        for link in clean_links:
+        for link in masked_links:
             f.write(link + "\n")
             
-    print("Готово! Результат сохранен в output.txt")
+    print("Готово! Имена серверов замаскированы, результат сохранен в output.txt")
 
 if __name__ == "__main__":
     main()
